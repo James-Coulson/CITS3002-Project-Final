@@ -25,12 +25,12 @@ def_port = -1
 hosts = []
 
 # Packet types
-PKT_EXEC = 0                # Execute command straight away and return response     { 'type': int, 'ack_num': int, 'cmd_length': int, 'command': str }
-PKT_CLOSE_CONN = 1          # Issued to close the connection                        { 'type': int }
-PKT_ACK = 2                 # Issued to acknowledge previous sent packet            { 'type': int, 'ack_num': int }
-PKT_TERMINAL_OUTPUT = 3     # Packet thats contents should be printed to terminal   { 'type': int, 'ack_num': int, 'output_length': int, 'output': str }
-PKT_FILE_DETAILS = 4		# Contains the information about a file that is going to be transmitted	    { 'type': int, 'ack_num': int, 'filesize': int, 'filename': str }
-							# After the ack for this packet is received it will transmit the file
+PKT_EXEC = 0;				# Execute command straight away and return response     					{ 'type': int, 'ack_num': int, 'files': int, 'cmd_length': int, 'command': str }
+PKT_CLOSE_CONN = 1;         # Issued to close the connection                        					{ 'type': int }
+PKT_ACK = 2;                # Issued to acknowledge previous sent packet            					{ 'type': int, 'ack_num': int }
+PKT_TERMINAL_OUTPUT = 3;    # Packet thats contents should be printed to terminal   					{ 'type': int, 'ack_num': int, 'files': int, 'output_length': int, 'output': str }
+PKT_FILE_DETAILS = 4;		# Contains the information about a file that is going to be transmitted		{ 'type': int, 'ack_num': int, 'filesize': int, 'filename': str }
+								# After the ack for this packet is received it will transmit the file
 PKT_QUOTE_REQUEST = 5;		# Contains information about a quote wanted by the client					{ 'type': int, 'ack_num': int }
 PKT_QUOTE_RESPONSE = 6;		# Contains information about the requested quote							{ 'type': int, 'ack_num': int, 'quote': int }
 
@@ -249,23 +249,8 @@ def get_quote(host: int) -> int:
 			print("Got error when receiving data: {}".format(e))
 			break
 
-		silent_count = 0
 		# If the data received is empty (nothing sent)
 		if byte_recvd.decode('utf-8') == '':
-			# If number of silent period exceeds maximum
-			if silent_count > MAX_SILENT_PERIODS:
-				# Print if verbose
-				if verbose:
-					print("Closed connection with {}".format(hosts[host]))
-				# Break to exit loop
-				break
-
-			# Increment silent count
-			silent_count += 1
-
-			# Print conn status
-			if verbose:
-				print("{} silent_count = {}".format(hosts[0], silent_count))
 
 			# Sleep thread
 			time.sleep(SLEEP_PERIOD)
@@ -477,6 +462,7 @@ def execute():
 			# Waiting for ack
 			if not wait_for_ack(sock, ack_num, packet):
 				print("ack failed \n")
+				sys.exit(-1)
 				break
 
 			# Sending files to server if execution requires it
@@ -488,6 +474,7 @@ def execute():
 					f = open(file_path, 'rb')
 					if f.closed: # File fails to open
 						print("File failed to open: {}\n".format(file_path))
+						sys.exit(-1)
 					
 					# Getting file size and creating ack number for packet
 					file_size = os.path.getsize(file_path)
@@ -510,6 +497,7 @@ def execute():
 					# Waiting for ack
 					if not wait_for_ack(sock, ack_num, file_details_pkt):
 						print("ack failed \n")
+						sys.exit(-1)
 						break
 					
 					# Sending the file, buffer by buffer - special case for when remainder of file is smaller than buffer
@@ -526,14 +514,13 @@ def execute():
 					# Waiting for ack after file sent is completed
 					if not wait_for_ack(sock, ack_num, file_details_pkt):
 						print("ack failed \n")
+						sys.exit(-1)
 						break
 
 					# Allowing for server to catch up and incrementing file to send
 					time.sleep(2)
 					i += 1
 
-			# Int counts number of silent period for purpose of closing inactive connections
-			silent_count = 0
 			while True:
 				# Obtains data from connect and handles EOFError
 				try:
@@ -545,20 +532,6 @@ def execute():
 				
 				# If the data received is empty (nothing sent)
 				if byte_recvd.decode('utf-8') == '':
-					# If number of silent period exceeds maximum
-					if silent_count > MAX_SILENT_PERIODS:
-						# Print if verbose
-						if verbose:
-							print("Closed connection with {}".format(hosts[0]))
-						# Break to exit loop
-						break
-
-					# Increment silent count
-					silent_count += 1
-
-					# Print conn status
-					if verbose:
-						print("{} silent_count = {}".format(hosts[0], silent_count))
 
 					# Sleep thread
 					time.sleep(SLEEP_PERIOD)
@@ -617,7 +590,7 @@ def execute():
 
 								# Receive file
 								new_file_data = ''
-								while new_file_data == '':       # may need to add timeouts here
+								while new_file_data == '':      
 									try:
 										new_file_data = sock.recv(min(file_details_packet['filesize'], 1024))
 									except socket.timeout as e:
@@ -676,6 +649,8 @@ def execute():
 		while processes:
 			try:
 				pid, exit_code = os.wait()
+				if exit_code == -1:
+					exit(-1)
 			except ChildProcessError:
 				continue
 			if pid != 0:
